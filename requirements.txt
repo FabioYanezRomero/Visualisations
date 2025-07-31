@@ -1,0 +1,14 @@
+altair
+altair-saver
+vega_datasets
+pandas
+numpy
+matplotlib
+seaborn
+plotly
+bokeh
+colorcet
+tqdm
+rich
+scikit-learn
+jupyter
