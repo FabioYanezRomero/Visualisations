@@ -12,3 +12,4 @@ tqdm
 rich
 scikit-learn
 jupyter
+kaleido
