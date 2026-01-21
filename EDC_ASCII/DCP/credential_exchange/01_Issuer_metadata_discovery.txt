@@ -1,0 +1,26 @@
+1. Issuer Metadata Discovery (Descubrimiento de Metadatos del Emisor)
+   HOLDER (CLIENT)                                  ISSUER (SERVER)
+   +-----------------------+                        +-----------------------+
+   | Identity Hub          |                        | Issuer Service        |
+   |                       |  (1) HTTP GET          |                       |
+   | [Discovery Client]    | ---------------------> | [Issuer Metadata API] |
+   |                       |  /.well-known/         |                       |
+   |                       |  openid-credential-    |                       |
+   |                       |  issuer                |                       |
+   |                       |                        |                       |
+   |                       |  (2) Configuration     |                       |
+   |                       | <--------------------- |                       |
+   |                       |   {                    |                       |
+   |                       |     "credential_       |                       |
+   |                       |      configurations_   |                       |
+   |                       |      supported": [...] |                       |
+   |                       |   }                    |                       |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+This is the bootstrapping phase where the Holder discovers the Issuer's capabilities, supported credential formats (e.g., jwt_vc_json), and cryptographic suites.
+
+(1) HTTP GET: The Holder requests the standard .well-known endpoint defined by the DCP specification to retrieve the Issuer's metadata.
+
+(2) Configuration: The Issuer responds with a JSON document describing its credential_configurations_supported. This includes the specific credential types (e.g., MembershipCredential), the formats supported (e.g., VC1_0_JWT), and the cryptographic algorithms available for signing.

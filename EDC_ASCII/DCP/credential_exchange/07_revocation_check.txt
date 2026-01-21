@@ -1,0 +1,24 @@
+7. Revocation Check (Verificación de Revocación)
+   VERIFIER (CLIENTE)                               ISSUER (STATUS HOST)
+   +-----------------------+                        +-----------------------+
+   | Control Plane         |                        | Status Endpoint       |
+   |                       |  (1) Fetch List        | (Servidor Estático/CDN|
+   | [Revocation Service]  | ---------------------> |  o Issuer API)        |
+   | (Lee 'credential      |   GET /statuslist/1    |                       |
+   |  Status' de la VC)    |                        |                       |
+   |                       |  (2) Return List VC    |                       |
+   |                       | <--------------------- |                       |
+   |  (3) Verify Bit       |   (Signed StatusList)  |                       |
+   | (Descomprime lista)   |                        |                       |
+   | (Revisa índice #N)    |                        |                       |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+El Verificador comprueba si una credencial presentada sigue siendo válida o ha sido revocada por el emisor, utilizando listas de estado eficientes (BitStringStatusList).
+
+(1) Fetch List: La credencial original contiene un campo credentialStatus con la URL de la lista de revocación y un índice (posición de bit). El Verificador descarga esta lista. EDC soporta BitStringStatusList (recomendado) y StatusList2021.
+
+(2) Return List VC: La lista en sí misma es una Verifiable Credential firmada por el Issuer que contiene una cadena de bits comprimida. El Issuer no sabe qué credencial específica se está verificando, preservando la privacidad.
+
+(3) Verify Bit: El Verificador valida la firma de la lista, la descomprime y comprueba si el bit en el índice especificado es 0 (válido) o 1 (revocado).

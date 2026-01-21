@@ -1,0 +1,90 @@
+Diagrama DPS: Suspensión de Flujo de Datos
+
+   DOMINIO B (PROVEEDOR) - CONTROL PLANE
+   +-----------------------------------------------------------------------------------+
+   |  PASO 1: TRIGGERS (Variantes de Entrada)                                          |
+   |                                                                                   |
+   |  [Var A: Automático]        [Var B: Remoto]              [Var C: Manual]          |
+   |   Policy Monitor             DSP API Controller           Management API          |
+   |  (Detecta violación)        (Recibe mensaje DSP)         (Operador solicita)      |
+   |         |                          |                            |                 |
+   |         | (Monitor)                | (TransferSuspension)       | (POST /suspend) |
+   |         v                          v                            v                 |
+   +---------+--------------------------+----------------------------+-----------------+
+             |                          |                            |
+             | (Convergencia)           |                            |
+             v                          v                            v
+   +-----------------------------------------------------------------------------------+
+   |  [2. Transfer Process Manager]                                                    |
+   |     (Máquina de Estados: Transiciona de STARTED -> SUSPENDING)                    |
+   |     (Identifica Data Plane asignado al proceso)                                   |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [3. Signaling Dispatcher]                                                        |
+   |     (Construye mensaje interno: DataFlowSuspendMessage)                           |
+   |         |                                                                         |
+   |         +-----------------------------+                                           |
+   |                                       | (4) DPS Request                           |
+   |                                       |     POST /v1/dataflows                    |
+   +---------------------------------------|-------------------------------------------+
+                                           |
+                                           v
+   DOMINIO B (PROVEEDOR) - DATA PLANE      |
+   +---------------------------------------|-------------------------------------------+
+   |                                       |                                           |
+   |  [5. Signaling API Controller]        |                                           |
+   |     (Endpoint: /api/signaling)        |                                           |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [6. Data Plane Manager]                                                          |
+   |     (Valida ID de proceso y estado actual)                                        |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [7. Access Control / Pipeline Service]                                           |
+   |     (PULL: Revoca Token en base de datos)                                         |
+   |     (PUSH: Detiene hilos de transmisión)                                          |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [8. Response Handler]                                                            |
+   |     (Retorna HTTP 200 OK)                                                         |
+   |                                                                                   |
+   +-----------------------------------------------------------------------------------+
+
+
+Análisis Técnico del Flujo SUSPEND (Punto por Punto)
+
+Análisis de las formas de llegar a SUSPENDED (Paso 1 al 2)
+Independientemente de quién dé la orden, el Transfer Process Manager (Paso 2) actúa como el "embudo" central. Su lógica es idéntica para los tres casos:
+    1. Variante A (Policy Monitor): El sistema interno detecta que el contrato ya no es válido (ej. expiración temporal).
+
+    2. Variante B (DSP Remoto): La contraparte (Consumidor) envía un mensaje TransferSuspensionMessage vía protocolo DSP porque no puede recibir más datos temporalmente.
+
+    3. Variante C (API Manual): Un administrador invoca la Management API (POST /transferprocesses/{id}/suspend) para detener el flujo por mantenimiento o auditoría.
+
+Resultado Unificado: Una vez que el estado cambia a SUSPENDING en el paso 2, el sistema siempre utiliza el protocolo DPS (Data Plane Signaling) (pasos 3-8) para hacer efectiva la suspensión en el Data Plane, revocando tokens o deteniendo transferencias activas
+
+
+Análisis de los pasos comunes despues de llegar a SUSPENDED
+
+2. Transfer Process Manager (Estado: SUSPENDING) Al recibir la señal del monitor, el TransferProcessManager mueve la máquina de estados de STARTED a SUSPENDING. Este estado intermedio indica que la decisión de pausar se ha tomado, pero el Data Plane aún no ha confirmado la acción.
+    • Fuente: Máquina de estados y transiciones de procesos de transferencia.
+
+3. Signaling Dispatcher (Enrutamiento) El Dispatcher busca en su base de datos qué instancia específica de Data Plane está ejecutando este proceso (recordada durante la fase de START). Construye un DataFlowSuspendMessage que incluye la razón de la suspensión.
+    • Fuente: El controlador registra qué Data Plane se seleccionó para enrutar mensajes de parada.
+
+4. Transporte DPS (Envío de la Orden) Se envía una solicitud HTTP POST al endpoint de señalización del Data Plane.
+    • Payload: DataFlowSuspendMessage (JSON-LD).
+    • Fuente: Envío del mensaje de suspensión vía API de señalización.
+
+5. Signaling API Controller (Ingress Data Plane) El Data Plane recibe la orden. Al igual que en el inicio, deserializa el mensaje y verifica que el processId corresponda a un flujo activo en esta instancia.
+
+6. Data Plane Manager (Ejecución) El DataPlaneManager procesa la orden de suspensión.
+    • Fuente: El Data Plane transiciona el flujo de datos al estado SUSPENDED.
+
+7. Detención Efectiva (Revocación) La acción depende del tipo de flujo:
+    • Caso PULL (Consumidor descarga): El Data Plane invalida el Token de Acceso asociado a ese proceso en su base de datos interna (AccessTokenData). Si el consumidor intenta usar ese token en la API Pública, recibirá un 403 Forbidden.
+    • Caso PUSH (Proveedor envía): Se detiene la lectura de la fuente (DataSource) y se pausan los hilos de transmisión.
+    • Fuente: Invalidación del token de acceso asociado.
+
+8. Response Handler (Confirmación) El Data Plane responde con 200 OK.
+    • Consecuencia en Control Plane: Al recibir el ACK, el TransferProcessManager mueve el estado final a SUSPENDED. El consumidor ya no tiene acceso a los datos, pero el proceso no se ha borrado; puede ser RESUMED (Reanudado) si el consumidor renueva sus credenciales.

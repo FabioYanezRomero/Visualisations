@@ -1,0 +1,36 @@
+1. Diagrama DSP: Flujo de descubrimiento (DISCOVERY)
+   DOMINIO A (CONSUMIDOR)                        DOMINIO B (PROVEEDOR)
+   +-----------------------+                     +-----------------------+
+   | Control Plane         |                     | Control Plane         |
+   |                       |  (1) DSP Request    |                       |
+   | [Catalog Service]     | ------------------> | [Catalog Protocol]    |
+   | (Solicita Catálogo)   |  CatalogRequest     | (Recibe solicitud)    |
+   |                       |  Message            |                       |
+   |                       |                     | [1. Identity Verify]  |
+   |                       |                     | (Valida Token y VPs)  |
+   |                       |                     |                       |
+   |                       |                     | [2. Dataset Resolver] |
+   |                       |                     | (Busca Contract Defs) |
+   |                       |                     | (Filtra por Policy)   |
+   |                       |                     | (Selecciona Assets)   |
+   |                       |                     |                       |
+   |                       |                     | [3. Distribution Bldr]|
+   |                       |                     | (Consulta Data Planes)|
+   |                       |                     | (Crea Distributions)  |
+   |                       |                     |                       |
+   | [Catalog Service]     |  (2) DSP Response   |                       |
+   | (Recibe DCAT Catalog) | <------------------ | [Response Generator]  |
+   | (Muestra Ofertas)     |  CatalogMessage     | (Retorna JSON-LD)     |
+   +-----------------------+                     +-----------------------+
+
+
+
+Análisis Técnico
+
+Este proceso es síncrono y efímero. A diferencia de la negociación o la transferencia, el Proveedor no guarda estado en su base de datos sobre quién pidió el catálogo. El catálogo se genera dinámicamente en tiempo real filtrando los activos según las credenciales del Consumidor.
+
+1. Dynamic Filtering (Policy Check): El Proveedor evalúa las Access Policies definidas en sus ContractDefinitions contra las credenciales (Identity/Verifiable Credentials) del Consumidor. Si el Consumidor no cumple la política, el activo ni siquiera aparece en el catálogo,.
+
+2. Resolución de Distribución: El Proveedor consulta internamente a sus Data Planes registrados (vía DPS check) para saber qué protocolos soportan (ej. HTTP, S3). Esto genera las dcat:distribution en la respuesta.
+
+3. Estructura DCAT: La respuesta es un objeto dcat:Catalog que contiene dcat:Dataset (el activo + política) y dcat:DataService (el endpoint DSP para negociar).

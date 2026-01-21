@@ -1,0 +1,82 @@
+Diagrama DPS: Inicio de Flujo de Datos
+   DOMINIO B (PROVEEDOR)
+   +-----------------------------------------------------------------------+
+   |  CONTROL PLANE                                                        |
+   |                                                                       |
+   | [1. Transfer Process Manager]                                         |
+   |    (Estado: STARTING)                                                 |
+   |     |                                                                 |
+   |     v                                                                 |
+   | [2. Data Plane Selector]                                              |
+   |    (Selecciona instancia disponible y capaz)                          |
+   |     |                                                                 |
+   |     v  (Instancia elegida: dp-instance-01)                            |
+   |                                                                       |
+   | [3. Signaling Dispatcher]                                             |
+   |    (Construye DataFlowStartMessage)                                   |
+   |    (Resuelve secretos del Vault)                                      |
+   |     |                                                                 |
+   |     +------------------------------+                                  |
+   |                                    | (4) DPS Request                  |
+   |                                    |     POST /v1/dataflows           |
+   |                                    |     Auth: Token Interno          |
+   +------------------------------------|----------------------------------+
+                                        |
+                                        v
+   +------------------------------------|----------------------------------+
+   |  DATA PLANE (Instancia 01)         |                                  |
+   |                                    |                                  |
+   | [5. Signaling API Controller]      |                                  |
+   |    (Endpoint: /api/signaling)      |                                  |
+   |     |                              |                                  |
+   |     v                              |                                  |
+   | [6. Data Plane Manager]            |                                  |
+   |    (Valida petición y Tipo)        |                                  |
+   |     |                              |                                  |
+   |     +-------------+----------------+                                  |
+   |     | (PUSH)      | (PULL)                                            |
+   |     v             v                                                   |
+   | [7A. Pipeline]  [7B. Auth Service]                                    |
+   | (Crea Source    (Genera Token Acceso)                                 |
+   |  & Sink)        (Crea EDR público)                                    |
+   |     |             |                                                   |
+   |     v             v                                                   |
+   | [8. Response Handler]                                                 |
+   |    (Retorna 200 OK + DataAddress)                                     |
+   |                                                                       |
+   +-----------------------------------------------------------------------+
+
+
+Análisis Técnico del Flujo DPS START (Punto por Punto)
+1. Transfer Process Manager (Estado: STARTING) Una vez que el contrato se ha firmado (vía DSP), el TransferProcessManager en el Control Plane avanza el proceso al estado STARTING. Aquí se decide iniciar el movimiento de datos real.
+    • Fuente: El gestor coordina el ciclo de vida del proceso de transferencia,.
+
+2. Data Plane Selector (Selección Inteligente) El Control Plane no envía la orden a ciegas. Consulta al DataPlaneSelectorService para elegir la mejor instancia de Data Plane.
+    • Criterios: Verifica qué instancias están en estado AVAILABLE (vía heartbeats periódicos) y cuáles soportan el tipo de transferencia requerido (ej. HttpData-PUSH o S3-PULL).
+    • Fuente: Selección basada en capacidades y disponibilidad,,.
+
+3. Signaling Dispatcher (Construcción del Mensaje) Se construye el DataFlowStartMessage.
+    • Resolución de Secretos: Si la dirección de origen (SourceDataAddress) requiere credenciales (ej. Access Key de S3), el Control Plane las recupera de su Vault seguro y las inyecta en el mensaje.
+    • Payload: Incluye IDs de proceso, dataset, acuerdo de contrato y las direcciones de origen y destino.
+    • Fuente: Construcción de mensajes de señalización y manejo de secretos,.
+
+4. Transporte DPS (HTTP Seguro) El mensaje viaja típicamente por una red interna segura (o mTLS si es entre redes) hacia la API de Señalización del Data Plane.
+    • Endpoint: POST /api/signaling/v1/dataflows (ruta estándar).
+    • Idempotencia: El protocolo exige que el Data Plane maneje la deduplicación de mensajes si hay reintentos.
+    • Fuente: Endpoint de señalización y comportamiento idempotente,.
+
+5. Signaling API Controller (Ingress Data Plane) El DataPlaneSignalingApiExtension recibe la solicitud en el puerto de señalización (diferente del puerto público de datos). Deserializa el JSON-LD a objetos Java.
+    • Fuente: Extensión de API de señalización.
+
+6. Data Plane Manager (Orquestación) El DataPlaneManager recibe la orden. Utiliza una máquina de estados interna para rastrear esta transmisión. Decide qué camino tomar según si el flujo es PUSH (Proveedor empuja datos) o PULL (Consumidor descarga datos).
+    • Fuente: Gestión de solicitudes y flujos.
+
+7. Ejecución (Bifurcación PUSH vs PULL)
+    • Caso 7A (PUSH - Provider Push): El PipelineService se activa. Utiliza fábricas (DataSourceFactory, DataSinkFactory) para conectar la fuente (ej. S3) con el destino (ej. HTTP del consumidor) e inicia la transferencia inmediatamente en hilos paralelos.
+    • Caso 7B (PULL - Consumer Pull): El DataPlaneAuthorizationService genera un token de acceso temporal (JWT) y crea una DataAddress pública (Proxy) que apunta al endpoint público de este Data Plane. No se mueven datos todavía.
+    • Fuente: Framework de Data Plane (DPF) y generación de tokens,,.
+
+8. Response Handler (ACK) El Data Plane responde al Control Plane con un DataFlowResponseMessage.
+    • Si fue PUSH, es un simple ACK (200 OK).
+    • Si fue PULL, el cuerpo incluye la DataAddress pública con el token incrustado, que el Control Plane luego enviará al Consumidor vía DSP.
+    • Fuente: Respuesta con DataAddress y transición de estado,.

@@ -1,0 +1,64 @@
+3. DSP Transfer Process Protocol (Coordinación)
+Este protocolo gestiona la máquina de estados compartida para mover los datos. Tiene tres fases críticas que faltaban en tu documentación: Request, Start y Completion/Termination.
+A. Transfer Request (Inicio)
+El Consumidor pide activar un contrato ya firmado (ContractAgreement).
+   DOMINIO A (CONSUMIDOR)                        DOMINIO B (PROVEEDOR)
+   +-----------------------+                     +-----------------------+
+   | Control Plane         |                     | Control Plane         |
+   |                       |  (1) DSP Request    |                       |
+   | [TransferProcessMgr]  | ------------------> | [TransferProtocolSvc] |
+   | (Estado: REQUESTING)  |  TransferRequest    | (Valida Agreement)    |
+   |                       |  Message            | (Valida Vigencia)     |
+   |                       |                     |                       |
+   |                       |                     | [TransferProcessMgr]  |
+   |                       |                     | (Crea Proceso)        |
+   |                       |                     | (Estado: REQUESTED)   |
+   |                       |                     | (Dispara Provisioning)|
+   |                       |  (2) DSP ACK        |                       |
+   | (Estado: REQUESTED)   | <------------------ |                       |
+   |                       |      200 OK         |                       |
+   +-----------------------+                     +-----------------------+
+• Payload: El mensaje incluye el contractId, el transferType (ej. HttpData-PULL) y la dataDestination (si aplica).
+
+--------------------------------------------------------------------------------
+B. Transfer Start (La entrega del Token)
+Este es el paso crítico donde el Proveedor le entrega la "llave" (EDR) al Consumidor. Ocurre después de que el Proveedor haya coordinado exitosamente con su propio Data Plane vía DPS.
+   DOMINIO A (CONSUMIDOR)                        DOMINIO B (PROVEEDOR)
+   +-----------------------+                     +-----------------------+
+   | Control Plane         |                     | Control Plane         |
+   |                       |  (1) DSP Start      |                       |
+   | [TransferProcessMgr]  | <------------------ | [TransferProcessMgr]  |
+   | (Recibe Mensaje)      |  TransferStart      | (Ya tiene OK del DP)  |
+   |                       |  Message            | (Estado: STARTED)     |
+   |                       |                     |                       |
+   | [EDR Receiver]        |                     |                       |
+   | (Extrae DataAddress/  |                     |                       |
+   |  Token y lo guarda    |                     |                       |
+   |  en EDR Store/Cache)  |                     |                       |
+   |                       |  (2) DSP ACK        |                       |
+   | (Estado: STARTED)     | ------------------> |                       |
+   |                       |      200 OK         |                       |
+   +-----------------------+                     +-----------------------+
+• Endpoint Data Reference (EDR): En flujos PULL, este mensaje contiene la dirección del Data Plane público y el token de autorización temporal (generado previamente vía DPS). El Consumidor usa este EDR para descargar los datos directamente,.
+
+--------------------------------------------------------------------------------
+C. Transfer Termination / Completion (Cierre)
+Cualquiera de las partes puede finalizar. Si es un error o cancelación manual, es TERMINATE. Si los datos se enviaron completamente (flujo finito), es COMPLETE.
+   DOMINIO A (CONSUMIDOR)                        DOMINIO B (PROVEEDOR)
+   +-----------------------+                     +-----------------------+
+   | Control Plane         |                     | Control Plane         |
+   |                       |  (1) DSP Signal     |                       |
+   | [TransferProcessMgr]  | <-----------------> | [TransferProcessMgr]  |
+   | (Detecta fin o error) |  TransferTermination| (Policy Monitor      |
+   |                       |  Message            |  o fin de envío)      |
+   |                       |                     |                       |
+   | [Resource Cleanup]    |  (2) DSP ACK        | [Resource Cleanup]    |
+   | (Estado: TERMINATED)  | ------------------> | (Estado: TERMINATED)  |
+   |                       |      200 OK         |                       |
+   +-----------------------+                     +-----------------------+
+• Causa Común: El PolicyMonitor del Proveedor detecta que el contrato expiró y envía un TransferTerminationMessage para cortar el acceso,.
+Resumen de la Arquitectura DSP Completa
+Con estos diagramas sumados a tu archivo de Negociación, tienes cubiertos los tres protocolos definidos en el estándar:
+1. Catalog: "Muéstrame qué tienes" (Filtrado dinámico).
+2. Negotiation: "Acordemos las reglas" (Creación del Contrato).
+3. Transfer: "Dame los datos" (Coordinación y entrega de EDR).

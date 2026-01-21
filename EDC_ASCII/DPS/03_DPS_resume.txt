@@ -1,0 +1,59 @@
+Diagrama DPS: Flujo de Reanudación (RESUME)
+   DOMINIO B (PROVEEDOR) - CONTROL PLANE
+   +-----------------------------------------------------------------------------------+
+   |  PASO 1: TRIGGERS (Levantamiento de Suspensión)                                   |
+   |                                                                                   |
+   |  [Var A: Automático]        [Var B: Remoto]              [Var C: Manual]          |
+   |   Policy Monitor             DSP API Controller           Management API          |
+   |  (Verifica y valida         (Recibe mensaje              (Operador reanuda)       |
+   |   nuevas credenciales)       TransferStart/Resume)                                |
+   |         |                          |                            |                 |
+   |         v                          v                            v                 |
+   +---------+--------------------------+----------------------------+-----------------+
+             |                          |                            |
+             | (Convergencia)           |                            |
+             v                          v                            v
+   +-----------------------------------------------------------------------------------+
+   |  [2. Transfer Process Manager]                                                    |
+   |     (Máquina de Estados: SUSPENDED -> RESUMING -> STARTED)                        |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [3. Signaling Dispatcher]                                                        |
+   |     (IMPORTANTE: Construye DataFlowStartMessage)                                  |
+   |     (Reutiliza el mensaje de inicio para refrescar datos)                         |
+   |         |                                                                         |
+   |         +-----------------------------+                                           |
+   |                                       | (4) DPS Request (RE-START)                |
+   |                                       |     POST /v1/dataflows                    |
+   |                                       |     Body: DataFlowStartMessage            |
+   +---------------------------------------|-------------------------------------------+
+                                           |
+                                           v
+   DOMINIO B (PROVEEDOR) - DATA PLANE      |
+   +---------------------------------------|-------------------------------------------+
+   |                                       |                                           |
+   |  [5. Signaling API Controller]        |                                           |
+   |     (Recibe StartMessage sobre un proceso existente)                              |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [6. Data Plane Manager]                                                          |
+   |     (Detecta ID existente -> Trata como Reanudación)                              |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [7. Actualización de Recursos]                                                   |
+   |     - PULL: Genera NUEVO Token de Acceso y actualiza la DataAddress [2]         |
+   |     - PUSH: Reactiva los hilos de lectura/escritura                               |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [8. Response Handler]                                                            |
+   |     (Retorna 200 OK + Nueva DataAddress si es PULL)                               |
+   |                                                                                   |
+   +-----------------------------------------------------------------------------------+
+
+Análisis Técnico de flujo DPS RESUME (Punto por Punto)
+
+1. Estado Control Plane (RESUMED/STARTED): El Control Plane transiciona a RESUMED al recibir la orden. Sin embargo, para efectos del Data Plane, esto es un retorno al estado operativo STARTED. El sistema busca el Data Plane que originalmente manejaba este proceso.
+
+2. Reutilización de Mensaje (Idempotencia): El protocolo DPS es idempotente. Enviar un DataFlowStartMessage para un proceso que ya existe (y estaba suspendido) le indica al Data Plane que debe actualizar el estado a activo. No se duplican recursos, se reactivan.
+
+3. Regeneración de Credenciales (Caso PULL): Este es el punto crítico. Si el flujo es Consumer PULL, la respuesta del paso 8 incluirá una nueva DataAddress con un nuevo token de acceso. El consumidor debe descartar la referencia anterior (EDR) y usar esta nueva para volver a descargar datos.

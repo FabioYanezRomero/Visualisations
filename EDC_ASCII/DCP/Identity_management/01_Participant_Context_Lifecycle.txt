@@ -1,0 +1,24 @@
+1. Participant Context Lifecycle (Gestión de Contextos)
+   ADMIN (CLIENTE)                                  IDENTITY HUB (SERVIDOR)
+   +-----------------------+                        +-----------------------+
+   | Management Client     |                        | Identity API          |
+   |                       |  (1) Create Context    |                       |
+   | [Admin Console]       | ---------------------> | [ParticipantContext   |
+   |                       |   POST /v1/participants|  Service]             |
+   |                       |                        |                       |
+   |                       |                        |  (2) Initialization   |
+   |                       |                        | (Genera API Key)      |
+   |                       |  (3) Response          | (Crea DID Document)   |
+   |                       | <--------------------- | (Genera KeyPair def.) |
+   |                       |   { "apiKey": "..." }  | (Estado: CREATED)     |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+El administrador crea un entorno aislado (tenant) para un participante. Este es el primer paso antes de poder gestionar claves o credenciales.
+
+• (1) Create Context: El administrador invoca la API para crear un ParticipantContext. Cada contexto actúa como un límite de seguridad y alcance para los recursos de un participante específico (Identity Hub soporta multi-tenancy).
+
+• (2) Initialization: El servicio ejecuta una transacción que genera una API Key para acceso futuro, crea un objeto DidDocument interno y genera un par de claves por defecto, guardando la clave privada en la Bóveda (Vault).
+
+• (3) Response: El sistema devuelve la API Key. El contexto nace en estado CREATED, lo que significa que está inicializado pero no es públicamente accesible hasta su activación.

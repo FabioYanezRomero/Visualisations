@@ -1,0 +1,22 @@
+3. Issuance Status (Estado de Emisión)
+
+   HOLDER (CLIENT)                                  ISSUER (SERVER)
+   +-----------------------+                        +-----------------------+
+   | Identity Hub          |                        | Issuer Service        |
+   |                       |  (1) Check Status      |                       |
+   | [Credential Client]   | ---------------------> | [Request Status API]  |
+   |                       |   GET /status/proc-1   |                       |
+   |                       |                        |                       |
+   |                       |  (2) Current State     | [IssuanceProcessStore]|
+   |                       | <--------------------- | (Look up Process ID)  |
+   |                       |   { "state":           | (Return Status Enum)  |
+   |                       |     "IN_PROGRESS" }    |                       |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+Because issuance is asynchronous (potentially requiring manual approval or complex checks), the Holder must poll for the status of their request using the ID received in step 2.
+
+(1) Check Status: The Holder calls the Credential Request Status API using the process ID returned during the issuance request.
+
+(2) Current State: The Issuer queries the IssuanceProcessStore to find the current state of the process (e.g., RECEIVED, IN_PROGRESS, ISSUED, FAILED). This allows the Holder to know when the credential is ready to be delivered or if the request was denied.

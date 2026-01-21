@@ -1,0 +1,71 @@
+2. Token Renewal - Data Plane (Renovación de Token de Acceso)
+
+   DOMINIO (PROVEEDOR/CONSUMIDOR)
+   +-----------------------------------------------------------------------------------+
+   |  CONTROL PLANE                                                                    |
+   |                                                                                   |
+   |  [1. Transfer Process Manager]                                                    |
+   |     (Estado: STARTED - Flujo activo)                                              |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [2. Token Expiry Monitor]                                                        |
+   |     (Detecta token próximo a expirar)                                             |
+   |     (Threshold configurable)                                                      |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [3. Signaling Dispatcher]                                                        |
+   |     (Construye DataFlowStartMessage)                                              |
+   |     (Reutiliza ProcessId existente)                                               |
+   |         |                                                                         |
+   |         +-----------------------------+                                           |
+   |                                       | (4) DPS Request (RE-START)                |
+   |                                       |     POST /v1/dataflows                    |
+   +---------------------------------------|-------------------------------------------+
+                                           |
+                                           v
+   DATA PLANE                              |
+   +---------------------------------------|-------------------------------------------+
+   |                                       |                                           |
+   |  [5. Signaling API Controller]        |                                           |
+   |     (Recibe StartMessage sobre proceso existente)                                 |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [6. Data Plane Manager]                                                          |
+   |     (Detecta renovación por ID existente)                                         |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [7. Auth Service]                                                                |
+   |     (Genera NUEVO Token de Acceso)                                                |
+   |     (Invalida token anterior)                                                     |
+   |     (Actualiza AccessTokenData)                                                   |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [8. Response Handler]                                                            |
+   |     (Retorna 200 OK + Nueva DataAddress/EDR)                                      |
+   |                                                                                   |
+   +-----------------------------------------------------------------------------------+
+
+
+Descripción Técnica:
+
+> [!IMPORTANT]
+> Esta funcionalidad está actualmente marcada como "NO IMPLEMENTADA" en la documentación oficial de EDC.
+> El diagrama representa el flujo teórico basado en la arquitectura DPS y las recomendaciones del estándar.
+
+La renovación de tokens de acceso en el Data Plane permite mantener flujos de transferencia activos sin interrupción cuando el token de autorización está por expirar.
+
+(1) Estado Activo: El Transfer Process está en estado STARTED con un flujo de datos activo (típicamente Consumer PULL).
+
+(2) Detección de Expiración: Un monitor interno (hipotético) detecta que el token de acceso asociado al proceso está próximo a expirar. El umbral sería configurable (ej. renovar cuando queden menos de 10 minutos).
+
+(3) Reutilización de Mensaje: El protocolo DPS es idempotente. Se envía un DataFlowStartMessage con el mismo ProcessId del flujo activo. Esto indica al Data Plane que debe refrescar las credenciales sin crear un nuevo flujo.
+
+(4) Renovación: El Data Plane genera un nuevo token de acceso JWT con fecha de expiración extendida. El token anterior se invalida para prevenir uso después de la renovación.
+
+(5) Respuesta: El Control Plane recibe la nueva DataAddress/EDR con el token actualizado. En flujos Consumer PULL, el consumidor debe obtener esta nueva referencia para continuar descargando datos.
+
+Nota Importante:
+La documentación de EDC indica que esta funcionalidad "actualmente no está implementada" y que debe ser una solución específica del dataspace. Las implementaciones actuales típicamente:
+- Usan tokens de larga duración
+- Terminan y reinician el proceso de transferencia completo
+- Implementan renovación a nivel de aplicación cliente

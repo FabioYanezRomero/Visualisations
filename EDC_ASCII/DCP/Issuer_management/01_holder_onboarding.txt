@@ -1,0 +1,24 @@
+1. Holder Onboarding (Registro de Cliente)
+
+   ADMIN (CLIENTE)                                  ISSUER SERVICE (SERVIDOR)
+   +-----------------------+                        +-----------------------+
+   | Management Client     |                        | Issuer Admin API      |
+   |                       |  (1) Create Holder     |                       |
+   | [Admin Console]       | ---------------------> | [Holder API]          |
+   |                       |   POST /holders        |                       |
+   |                       |                        |  (2) Persist Holder   |
+   |                       |                        | [Holder Store]        |
+   |                       |  (3) Success           | (Guarda DID y metadatos)|
+   |                       | <--------------------- | (Genera Holder ID)    |
+   |                       |   HTTP 200 OK          |                       |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+Si el Issuer no admite solicitudes anónimas, el Administrador debe registrar previamente a los Holders conocidos en la base de datos del Issuer. Esto permite vincular datos internos (ej. CRM, BBDD SQL) al DID del cliente.
+
+(1) Create Holder: El administrador envía una solicitud a la Holder API (parte del módulo holder-api),. Se proporciona el DID del participante (ej. did:web:partner1) y opcionalmente metadatos como un nombre legible.
+
+(2) Persist Holder: El servicio valida la entrada y persiste la entidad Holder en el HolderStore (generalmente respaldado por SQL vía issuerservice-holder-store-sql),. Esto establece una relación de confianza permitida y habilita el mapeo de datos futuros.
+
+(3) Success: Se confirma el registro. Ahora el sistema reconocerá las solicitudes de emisión provenientes de este DID y podrá enriquecerlas con datos internos.

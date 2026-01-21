@@ -1,0 +1,26 @@
+6. Presentation Query (Consulta de Presentación)
+
+   VERIFIER (CLIENTE)                               HOLDER (SERVIDOR)
+   +-----------------------+                        +-----------------------+
+   | Control Plane         |                        | Identity Hub          |
+   |                       |  (1) Presentation      |                       |
+   | [Presentation Req     |      Query             | [Presentation API]    |
+   |  Service]             | ---------------------> | (Valida Token acceso) |
+   | (Define Scopes/Types) |   POST /query          |                       |
+   |                       |                        |  (2) Resolution       |
+   |                       |                        | [CredentialQuery      |
+   |                       |                        |  Resolver]            |
+   |                       |  (3) Return VP         | (Busca VCs en Store)  |
+   |                       | <--------------------- | [VP Service]          |
+   |                       |   (VP Token JWT)       | (Genera y firma VP)   |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+Un Verificador (Verifier) solicita al Holder pruebas de identidad o credenciales específicas para autorizar una transacción.
+
+(1) Presentation Query: El Verificador envía un PresentationQueryMessage. Actualmente, EDC utiliza Scopes (cadenas de texto) para solicitar tipos de credenciales específicos (ej. "AuditCertificationCredential"),.
+
+(2) Resolution & Generation: El Identity Hub utiliza el CredentialQueryResolver para encontrar credenciales en su base de datos que coincidan con los scopes solicitados. Luego, el VerifiablePresentationService empaqueta estas credenciales en una Verifiable Presentation (VP) y la firma con la clave privada del Holder.
+
+(3) Return VP: Se devuelve la VP firmada (formato JWT por defecto). El Verificador validará la firma del Holder y la de los Issuers de las credenciales internas.

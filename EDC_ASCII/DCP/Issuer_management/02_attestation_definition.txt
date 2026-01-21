@@ -1,0 +1,24 @@
+2. Attestation Definition (Definición de Atestación)
+
+   ADMIN (CLIENTE)                                  ISSUER SERVICE (SERVIDOR)
+   +-----------------------+                        +-----------------------+
+   | Management Client     |                        | Issuer Admin API      |
+   |                       |  (1) Define Source     |                       |
+   | [Admin Console]       | ---------------------> | [Attestation API]     |
+   |                       |   POST /attestations   |                       |
+   |                       |   (Type: Database)     |  (2) Validate & Store |
+   |                       |                        | [AttestationDef.      |
+   |                       |  (3) Success           |  Store]               |
+   |                       | <--------------------- | (Guarda config SQL)   |
+   |                       |   HTTP 200 OK          |                       |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+Antes de definir una credencial, el Administrador debe configurar las Fuentes de Atestación (Attestation Sources). Esto define de dónde el Issuer extrae los datos reales (claims) para poner en la credencial (ej. una consulta SQL a una base de datos de clientes).
+
+(1) Define Source: El administrador configura una AttestationDefinition usando la API correspondiente,. Por ejemplo, se define una DatabaseAttestationSource que incluye una consulta SQL parametrizada (ej. SELECT level FROM customers WHERE did = ?).
+
+(2) Validate & Store: El sistema valida la configuración y la guarda en el AttestationDefinitionStore. Esta definición actúa como un conector lógico a los datos brutos.
+
+(3) Success: La fuente de datos queda registrada y lista para ser vinculada a múltiples definiciones de credenciales.

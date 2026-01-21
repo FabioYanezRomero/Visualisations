@@ -1,0 +1,84 @@
+2. Diagrama DSP: Flujo de negociación (NEGOTIATION)
+
+   
+   USUARIO 1 (CONSUMIDOR)                                          USUARIO 2 (PROVEEDOR)
+   Dominio A                                                       Dominio B
+   +-------------------------------------+                         +-----------------------------------------+
+   | CONTROL PLANE                       |                         | CONTROL PLANE                           |
+   |                                     |                         |                                         |
+   | [1. Management API]                 |                         |                                         |
+   |    (Trigger: POST /negotiations)    |                         |             (Esperando Petición)        |
+   |     |                               |                         |                                         |
+   |     v                               |                         |                                         |
+   | [2. Negotiation Manager]            |                         |                                         |
+   |    (Estado: REQUESTING)             |                         |                                         |
+   |     |                               |                         |                                         |
+   |     v                               |                         |                                         |
+   | [3. Remote Message Dispatcher]      |          (3)            | [4. DSP API Controller (Ingress)]       |
+   |    (Genera Token & Firma)           |========================>|    (Endpoint: /api/protocol)            |
+   |    (Serializa a JSON-LD)            |    DSP ContractRequest  |    (Puerto: 8282)                       |
+   |                                     |    (HTTPS + JSON-LD)    |      |                                  |
+   |                                     |                         |      v                                  |
+   |                                     |                         | [5. Identity Service]                   |
+   |                                     |                         |    (Valida Token DCP y Firma)           |
+   |                                     |                         |      |                                  |
+   |                                     |                         |      v (Si es válido)                   |
+   |                                     |                         | [6. Protocol Service]                   |
+   |                                     |                         |    (Deserializa JSON-LD -> Java)        |
+   |                                     |                         |      |                                  |
+   |                                     |                         |      v                                  |
+   |                                     |                         | [7. Transaction Context]                |
+   |                                     |                         |    (Inicia Transacción DB)              |
+   |                                     |                         |      |                                  |
+   |                                     |                         |      v                                  |
+   |                                     |                         | [8. Negotiation Manager]                |
+   |                                     |                         |    (Evalúa Políticas)                   |
+   |                                     |                         |    (Crea Estado: REQUESTED)             |
+   |                                     |                         |      |                                  |
+   |                                     |                         |      v                                  |
+   | [10. DSP Client]                    |<========================| [9. SQL Persistence Store]              |
+   |    (Recibe HTTP 200 OK)             |     ACK (Confirmación)  |    (Commit Transacción)                 |
+   |                                     |                         |                                         |
+   +-------------------------------------+                         +-----------------------------------------+
+
+
+Flujo Detallado: DSP Contract Negotiation
+
+1. Management API (Consumer Trigger) El sistema interno del Consumidor (ej. un portal web o script) invoca la Management API del Control Plane (POST /v3/contractnegotiations). En este punto, se define qué offerId (oferta) del catálogo se quiere negociar y con qué proveedor (counterPartyAddress).
+    • Fuente: La API de gestión es la interfaz RESTful para operaciones del cliente.
+
+2. Negotiation Manager (Estado: REQUESTING) El ConsumerContractNegotiationManager recibe la orden. Crea una nueva instancia de negociación en su base de datos interna y la mueve al estado REQUESTING. Este estado indica que la intención de negociar existe, pero el mensaje aún no ha salido del dominio del consumidor.
+    • Fuente: El control plane gestiona procesos asíncronos mediante máquinas de estados.
+
+3. Remote Message Dispatcher (Empaquetado y Seguridad) El DspHttpRemoteMessageDispatcher entra en acción para enviar el mensaje. Realiza tres tareas críticas:
+    1. Generación de Token (DCP): Crea un Self-Issued ID Token (JWT) firmado con la clave privada del Consumidor. Este token contiene su DID (iss, sub) y se inyecta en la cabecera Authorization.
+    2. Serialización JSON-LD: Convierte el objeto Java ContractRequest en un documento JSON-LD expandido, utilizando los contextos y vocabularios (DCAT, ODRL) correctos.
+    3. Envío HTTPS: Dispara la petición POST al endpoint del proveedor.
+    • Fuente: El despachador envía mensajes DSP, genera tokens, y serializa JSON-LD.
+
+4. DSP API Controller (Ingress - Provider) El Control Plane del Proveedor recibe la petición HTTPS en su puerto de protocolo (por defecto 8282, path /api/protocol). El DspNegotiationApiController intercepta la llamada. En este punto, el mensaje es solo texto JSON crudo entrando por la red.
+    • Fuente: Configuración por defecto del puerto 8282 y path de protocolo.
+
+5. Identity Service (El "Portero") Antes de procesar el contenido del mensaje, el IdentityService intercepta la petición.
+    1. Extrae el token de la cabecera Authorization.
+    2. Resuelve el DID del Consumidor (indicado en el token) para obtener su documento DID y clave pública.
+    3. Verifica criptográficamente la firma y la validez del token. Si falla, devuelve 401 Unauthorized y el proceso muere aquí.
+    • Fuente: Verificación de identidad y tokens en la capa de transporte DSP/DCP.
+
+6. Protocol Service & Transformers (Traducción) Una vez validada la identidad, el JSON-LD pasa al Protocol Service. Se utilizan Transformers específicos para deserializar el JSON-LD. Aquí ocurre la Expansión JSON-LD: se resuelven los prefijos (ej. odrl:) a sus URIs completas para asegurar que el Proveedor entienda semánticamente lo que el Consumidor está pidiendo, independientemente de los alias usados.
+    • Fuente: Transformación y expansión de JSON-LD en el ingreso.
+
+7. Transaction Context (Inicio de Transacción) Se abre un Contexto Transaccional. A partir de aquí, cualquier cambio en la base de datos (guardar la negociación) y cualquier evento disparado deben ocurrir atómicamente. Si algo falla más adelante, se hace rollback y es como si la petición nunca hubiera llegado (garantía de consistencia).
+    • Fuente: Ejecución transaccional para garantizar fiabilidad.
+
+8. Negotiation Manager (Evaluación de Políticas) El ProviderContractNegotiationManager toma el control dentro de la transacción.
+    1. Policy Engine: Evalúa si el Consumidor (identificado por su DID y Credenciales Verificables) cumple con la Access Policy y la Contract Policy definidas para ese activo.
+    2. Si cumple, crea la entidad ContractNegotiation interna y la pone en estado REQUESTED.
+    • Fuente: Evaluación de políticas de acceso y contrato.
+
+9. SQL Persistence Store (Commit) El estado de la negociación se persiste en la base de datos (PostgreSQL). EDC utiliza bloqueos pesimistas o leasing para evitar condiciones de carrera si hay múltiples réplicas del Control Plane. Solo si la escritura en la BD es exitosa, se confirma (commit) la transacción iniciada en el punto 7.
+    • Fuente: Persistencia SQL y manejo de bloqueos/leasing.
+
+10. DSP Client (Respuesta ACK) Una vez que los datos están seguros en la BD, el controlador devuelve un código HTTP 200/201 (ACK) al Consumidor.
+    • Importante: Esto solo confirma recepción y persistencia, no aceptación final del contrato (que ocurre asíncronamente después). Si el Consumidor no recibe este ACK (por fallo de red), su dispatcher (Punto 3) reintentará el envío automáticamente (idempotencia).
+    • Fuente: Mensajería fiable, idempotencia y reintentos.

@@ -1,0 +1,27 @@
+2. DID Document Publishing (Publicación de Identidad)
+
+   ADMIN (CLIENTE)                                  IDENTITY HUB (SERVIDOR)
+   +-----------------------+                        +-----------------------+
+   | Management Client     |                        | Identity API          |
+   |                       |  (1) Activate Context  |                       |
+   | [Admin Console]       | ---------------------> | [ParticipantContext   |
+   |                       |   POST /.../activate   |  Service]             |
+   |                       |                        |                       |
+   |                       |                        |  (2) Publish DID      |
+   |                       |                        | [DidDocumentPublisher]|
+   |                       |                        | (Genera fichero JSON) |
+   |                       |  (3) Success           | (Sube a Web/Storage)  |
+   |                       | <--------------------- | (Estado: ACTIVATED)   |
+   |                       |   HTTP 200 OK          |                       |
+   +-----------------------+                        +-----------------------+
+
+
+Descripción Técnica:
+
+Para que el participante sea visible en el Dataspace, su Documento DID debe hacerse público.
+
+(1) Activate Context: El administrador solicita la transición del estado CREATED a ACTIVATED.
+
+(2) Publish DID: Si el contexto está activo, el sistema utiliza el DidDocumentPublisher configurado. Para did:web, esto implica renderizar el documento JSON y subirlo a la ubicación web o almacenamiento correspondiente para que sea resoluble públicamente.
+
+(3) Success: El participante ahora es "público". Otros conectores pueden resolver su identidad para verificar firmas.

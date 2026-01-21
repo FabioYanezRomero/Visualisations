@@ -1,0 +1,25 @@
+3. Key Rotation (Rotación de Claves)
+
+   ADMIN (CLIENTE)                                  IDENTITY HUB (SERVIDOR)
+   +-----------------------+                        +-----------------------+
+   | Management Client     |                        | Identity API          |
+   |                       |  (1) Rotate Key        |                       |
+   | [Admin Console]       | ---------------------> | [KeyPair Service]     |
+   |                       |   POST /keypairs/rotate|                       |
+   |                       |                        |  (2) Staged Rotation  |
+   |                       |                        | (Genera Clave B)      |
+   |                       |                        | (Añade Public B a DID)|
+   |                       |  (3) Success           | (Destruye Privada A)  |
+   |                       | <--------------------- | (Public A permanece)  |
+   |                       |   HTTP 200 OK          |                       |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+Proceso de seguridad para reemplazar claves criptográficas sin interrumpir el servicio, utilizando una rotación escalonada.
+
+(1) Rotate Key: Se solicita la rotación de un par de claves activo.
+
+(2) Staged Rotation: El sistema genera un nuevo par de claves (B) y lo guarda. Actualiza el Documento DID para incluir la clave pública B como nuevo método de verificación. Crucialmente, la clave privada antigua (A) se elimina del Vault, pero su clave pública (A) se mantiene en el DID Document publicado para permitir la validación de credenciales históricas firmadas con A durante un tiempo de transición,.
+
+(3) Success: El DID Document actualizado se republica automáticamente.

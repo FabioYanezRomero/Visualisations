@@ -1,0 +1,106 @@
+================================================================================
+       ARQUITECTURA DE COMUNICACIÓN EDC - ECLIPSE DATASPACE COMPONENTS
+================================================================================
+                            Versión: Enero 2026
+                   Basado en documentación oficial de EDC
+================================================================================
+
+
+       USUARIO 1 (CONSUMIDOR)                                       USUARIO 2 (PROVEEDOR)
+   ==================================================       =================================================
+   |                                                |       |                                               |
+   |  +--------------+       +--------------+       |       |  +--------------+       +--------------+      |
+   |  | Issuer Svc   |<====> | Identity Hub |       |       |  | Identity Hub |<====> | Issuer Svc   |      |
+   |  +--------------+  (1)  +--------------+       |       |  +--------------+  (1)  +--------------+      |
+   |         ^          DCP        ^  ^             |       |         ^          DCP        ^               |
+   |         |                     |  |             |       |         |                     |               |
+   |         |          (Identidad)|  | (7)         |       |         | (Identidad)         |               |
+   |         |           (API/Mgmt)|  | DCP         |       |         | (API/Mgmt)          |               |
+   |         |                     |  | Verif.      |       |         |                     |               |
+   |         |                     v  |             |       |         v                     |               |
+   |  +--------------+       +--------------+       |       |  +--------------+       +--------------+      |
+   |  | Fed. Catalog |       | Control Plane|       |       |  | Control Plane|       | Fed. Catalog |      |
+   |  +--------------+       +--------------+       |       |  +--------------+       +--------------+      |
+   |         |                 ^   |       ^        |       |    ^      |   ^                 |             |
+   |         |                 |   |       |        |       |    |      |   |                 |             |
+   |         |                 |   | (2)   |        | (3)   |    | (2)  |   |                 |             |
+   |         |                 |   | DPS   |=====================| DPS  |   |                 |             |
+   |         |                 |   |       |   DSP  |       |    |      |   |                 |             |
+   |         |                 |   v       |        |       |    v      |   |                 |             |
+   |         |               +-----------+ |        |       | +-----------+ |                 |             |
+   |         |               | Data Plane| |        |       | | Data Plane| |                 |             |
+   |         |               +-----------+ |        |       | +-----------+ |                 |             |
+   |         |                     |       |        |       |       |       |                 |             |
+   |         |                     |       |        |       |       |       |                 |             |
+   |         |                     |       |        |       |       |       |                 |             |
+   =================================================       =================================================
+             |                     |       |        |       |       |       |                 |
+             |                     |       |        |       |       |       |                 |
+             | (4) DSP (Crawling)  |       |        |       |       |       |                 |
+             +--------------------------------------+       +---------------------------------+
+                                   |       |                        |
+                                   |       | (6) DCP (Verificación) |
+                                   |       +------------------------+
+                                   |                                |
+                                   |      (5) Wire Protocol         |
+                                   +================================+
+                                         (HTTP / S3 / Kafka)
+
+
+================================================================================
+                           DESCRIPCIÓN DE PROTOCOLOS
+================================================================================
+
+(1) DCP (Issuance Flow): Identity Hub ↔ Issuer Service
+    ◦ Función: El Identity Hub solicita Credenciales Verificables (VCs) al Issuer Service.
+    ◦ Protocolo: Decentralized Claims Protocol (DCP)
+    ◦ Detalle: Ver carpeta DCP/credential_exchange/
+
+(2) DPS (Data Plane Signaling): Control Plane ↔ Data Plane
+    ◦ Función: El Control Plane envía mensajes de START, SUSPEND, RESUME o TERMINATE 
+      a su propio Data Plane para gestionar el flujo de datos.
+    ◦ Protocolo: API REST interna (Signaling API)
+    ◦ Detalle: Ver carpeta DPS/
+
+(3) DSP (Dataspace Protocol): Control Plane 1 ↔ Control Plane 2
+    ◦ Función: Negociación de contratos, ofertas de catálogo y mensajes de proceso 
+      de transferencia entre organizaciones.
+    ◦ Nota: Incluye el envío de tokens de identidad DCP en la cabecera Authorization.
+    ◦ Detalle: Ver carpeta DSP/
+
+(4) DSP (Catalog Crawling): Federated Catalog 1 → Control Plane 2
+    ◦ Función: El Federated Catalog del Usuario 1 actúa como un "cliente" DSP para 
+      solicitar y cachear el catálogo del Control Plane del Usuario 2.
+    ◦ Detalle: Ver DSP/01_DSP_discovery.txt
+
+(5) Wire Protocol (Transfer): Data Plane 1 ↔ Data Plane 2
+    ◦ Función: Transferencia real de datos (bytes). No pasa por el Control Plane.
+    ◦ Tipos: HTTP Proxy, S3 Push, Kafka, Azure Blob, etc.
+    ◦ Nota: Los tokens de acceso son generados por DPS y validados por el Data Plane.
+
+(6) DCP (Presentation/Verification): Control Plane 2 → Identity Hub 1
+    ◦ Función: El Proveedor (Control Plane 2) usa el token recibido para consultar 
+      directamente el Identity Hub 1 y verificar las credenciales del Consumidor 
+      antes de autorizar el contrato o transferencia.
+    ◦ Detalle: Ver DCP/credential_exchange/08_credential_verification.txt
+
+(7) DCP (Verification - Inverso): Control Plane 1 → Identity Hub 2
+    ◦ Función: Lo mismo ocurre en la dirección opuesta si el Consumidor necesita 
+      verificar la identidad del Proveedor (mutual authentication).
+
+
+================================================================================
+                              REFERENCIAS
+================================================================================
+
+Documentación Oficial EDC:
+  • https://eclipse-edc.github.io/documentation/
+
+Especificaciones:
+  • Dataspace Protocol: https://github.com/eclipse-dataspace-protocol-base/DataspaceProtocol
+  • DCP: https://github.com/eclipse-dataspace-dcp/decentralized-claims-protocol
+
+Diagramas Detallados:
+  • DCP/ - Decentralized Claims Protocol (17 diagramas)
+  • DSP/ - Dataspace Protocol (3 diagramas)
+  • DPS/ - Data Plane Signaling (4 diagramas)

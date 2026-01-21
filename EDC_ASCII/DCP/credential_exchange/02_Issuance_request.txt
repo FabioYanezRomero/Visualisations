@@ -1,0 +1,25 @@
+2. Issuance Request (Solicitud de Emisión)
+   HOLDER (CLIENT)                                  ISSUER (SERVER)
+   +-----------------------+                        +-----------------------+
+   | Identity Hub          |                        | Issuer Service        |
+   |                       |  (1) Credential Req    |                       |
+   | [Credential Client]   | ---------------------> | [Credential Req API]  |
+   | (Signs SI-Token with  |   POST /credentials    | (Validates SI-Token)  |
+   |  private key)         |   (Auth: SI-Token)     | (Checks Holder DB /   |
+   |                       |                        |  Anonymous Config)    |
+   |                       |                        |                       |
+   |                       |  (2) Ack & ID          | [Issuance Process]    |
+   |                       | <--------------------- | (Creates Process ID)  |
+   |                       |   HTTP 201 Created     | (Transition to        |
+   |                       |   { "id": "proc-1" }   |  'RECEIVED')          |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+The Holder formally requests a credential. The Issuer validates the request but does not return the credential immediately; instead, it creates a tracking process.
+
+(1) Credential Req: The Holder sends a CredentialRequest to the Issuer's API. The request is authenticated using a Self-Issued Token (SI-Token) signed by the Holder's private key to prove ownership of their DID.
+
+(2) Validation & Ack: The Issuer validates the token and checks if the Holder is allowed to request credentials. This involves checking the internal HolderStore for known participants or verifying if edc.issuance.anonymous.allowed is set to true.
+
+(3) Process Creation: Upon success, the Issuer creates a persistent IssuanceProcess entity, sets its state to RECEIVED, and returns a 201 Created status with the process ID for tracking.

@@ -1,0 +1,24 @@
+4. Key Revocation (Revocación de Claves)
+
+   ADMIN (CLIENTE)                                  IDENTITY HUB (SERVIDOR)
+   +-----------------------+                        +-----------------------+
+   | Management Client     |                        | Identity API          |
+   |                       |  (1) Revoke Key        |                       |
+   | [Admin Console]       | ---------------------> | [KeyPair Service]     |
+   |                       |   POST /keypairs/revoke|                       |
+   |                       |                        |  (2) Update DID Doc   |
+   |                       |                        | (Elimina Public Key)  |
+   |                       |  (3) Success           | (Republica DID Doc)   |
+   |                       | <--------------------- |                       |
+   |                       |   HTTP 200 OK          |                       |
+   +-----------------------+                        +-----------------------+
+
+Descripción Técnica:
+
+Invalidación inmediata de una clave en caso de compromiso de seguridad.
+
+(1) Revoke Key: El administrador marca un par de claves como comprometido.
+
+(2) Update DID Doc: El KeyPairService elimina inmediatamente la entrada de la clave pública (verification method) del Documento DID y fuerza una republicación. Al desaparecer del DID, cualquier firma generada con esa clave será rechazada por los verificadores, invalidando efectivamente todas las credenciales asociadas,.
+
+(3) Success: La clave pasa al estado REVOKED internamente.

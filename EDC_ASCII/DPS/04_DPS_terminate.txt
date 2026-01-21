@@ -1,0 +1,81 @@
+Diagrama DPS: Terminación de Flujo
+   DOMINIO B (PROVEEDOR) - CONTROL PLANE
+   +-----------------------------------------------------------------------------------+
+   |  PASO 1: TRIGGERS (Causas de Terminación)                                         |
+   |                                                                                   |
+   |  [Var A: Violación]         [Var B: Remoto]              [Var C: Manual/Error]    |
+   |   Policy Monitor             DSP API Controller           Management API / Error  |
+   |  (Detecta violación         (Recibe mensaje              (Operador cancela o      |
+   |   crítica o timeout)         TransferTermination)         fallo irrecuperable)    |
+   |         |                          |                            |                 |
+   |         v                          v                            v                 |
+   +---------+--------------------------+----------------------------+-----------------+
+             |                          |                            |
+             | (Convergencia)           |                            |
+             v                          v                            v
+   +-----------------------------------------------------------------------------------+
+   |  [2. Transfer Process Manager]                                                    |
+   |     (Máquina de Estados: Transiciona a TERMINATING)                               |
+   |     (Identifica Data Plane asignado al proceso)                                   |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [3. Signaling Dispatcher]                                                        |
+   |     (Construye mensaje: DataFlowTerminateMessage)                                 |
+   |     (Incluye razón: "reason")                                                     |
+   |         |                                                                         |
+   |         +-----------------------------+                                           |
+   |                                       | (4) DPS Request                           |
+   |                                       |     POST /v1/dataflows                    |
+   +---------------------------------------|-------------------------------------------+
+                                           |
+                                           v
+   DOMINIO B (PROVEEDOR) - DATA PLANE      |
+   +---------------------------------------|-------------------------------------------+
+   |                                       |                                           |
+   |  [5. Signaling API Controller]        |                                           |
+   |     (Endpoint: /api/signaling)        |                                           |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [6. Data Plane Manager]                                                          |
+   |     (Localiza proceso activo)                                                     |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [7. Resource Cleanup Service]                                                    |
+   |     (Acción Destructiva)                                                          |
+   |     - PULL: Elimina definitivamente el Token de Acceso (AccessTokenData)          |
+   |     - PUSH: Aborta hilos de transferencia y cierra sockets/streams                |
+   |     - Limpieza de recursos I/O temporales                                         |
+   |         |                                                                         |
+   |         v                                                                         |
+   |  [8. Response Handler]                                                            |
+   |     (Retorna HTTP 200 OK)                                                         |
+   |                                                                                   |
+   +-----------------------------------------------------------------------------------+
+
+
+Análisis Técnico del Flujo DPS TERMINATE (Punto por Punto)
+
+1. Triggers (Causas de Muerte) Existen múltiples razones para terminar un flujo, pero todas convergen en la necesidad de detener la transferencia inmediatamente:
+    • Violación de Políticas (Policy Monitor): El contrato ha expirado definitivamente o se ha detectado una violación de seguridad crítica (ej. token filtrado).
+    • Solicitud Remota (DSP): El consumidor envía un mensaje de terminación porque ya recibió todos los datos o desea cancelar.
+    • Manual/Error: Un operador cancela el proceso vía API, o el sistema encuentra un error irrecuperable (ej. el origen de datos ya no existe).
+
+2. Transfer Process Manager (Estado: TERMINATING) El gestor mueve el estado a TERMINATING. Este es un estado transitorio donde el Control Plane intenta limpiar los recursos en el Data Plane antes de marcar el proceso como cerrado en su base de datos,
+
+3. Signaling Dispatcher (Construcción del Mensaje) Se construye el DataFlowTerminateMessage.
+    • Payload: Incluye el processId y una reason (razón) descriptiva del cierre (ej. "Contract Expired"), útil para logs de auditoría en el Data Plane.
+
+4. Transporte DPS Se envía la petición HTTP POST al mismo endpoint idempotente usado para Start y Suspend: /api/signaling/v1/dataflows. El tipo de mensaje en el cuerpo JSON-LD indica la acción a tomar.
+
+5. Signaling API Controller El Data Plane recibe la orden. Al igual que en los otros flujos, valida la identidad del Control Plane (si hay autenticación interna configurada) y deserializa el mensaje.
+
+6. Data Plane Manager Identifica el flujo de datos correspondiente. Si el flujo ya no existe (ej. ya terminó naturalmente), la operación es idempotente y simplemente devuelve éxito.
+
+7. Resource Cleanup (Acción Destructiva) A diferencia de SUSPEND, aquí se busca liberar recursos permanentemente:
+    • Caso PULL: Se elimina el registro AccessTokenData de la base de datos del Data Plane. El token deja de ser válido para siempre. Si el usuario intenta usarlo, recibirá un 403 o 401,.
+    • Caso PUSH: Se interrumpen forzosamente los hilos de lectura/escritura y se cierran las conexiones a las fuentes de datos (DataSource) y destinos (DataSink).
+    • Recursos: Se limpian buffers o archivos temporales creados durante la transmisión.
+
+8. Response Handler (ACK y Estado Final) El Data Plane responde con 200 OK.
+    • Efecto en Control Plane: Al recibir la confirmación, el Transfer Process Manager mueve el estado final a TERMINATED. En este punto, el ciclo de vida del proceso de transferencia ha concluido oficialmente. Para volver a transferir datos, el Consumidor deberá iniciar un nuevo proceso de transferencia desde cero (Negociación -> Transfer Request).
+
